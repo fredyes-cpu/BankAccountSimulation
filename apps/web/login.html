@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link type="text/css" rel="stylesheet" href="css/materialize.min.css" media="screen,projection"/>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webová aplikace pro podporu výuky finanční gramotnosti studentů SOU</title>
+</head>
+<body class="blue lighten-2">
+    <header>
+        <nav class="white z-depth-1">
+            <div class="nav-wrapper container">
+                <span class="brand-logo left grey-text text-darken-4"
+                    style="font-size: 0.7rem; display: flex; align-items: center; height: 100%;">
+                    <span class="brand-logo-square grey lighten-1"></span>
+                    Webová aplikace pro podporu výuky finanční gramotnosti studentů SOU
+                </span>
+            </div>
+        </nav>
+    </header>
+
+    <main class="container">
+        <div class="row" style="width: 100%; max-width: 360px; margin-bottom: 0;">
+            <div class="col s12">
+                <div class="card-panel white z-depth-0" style="border-radius: 8px; padding: 24px;">
+                    <h4>Vítejte zpět</h4>
+                    <h6>Zde se přihlásíte ke svému účtu</h6>
+
+                    <form id="login-form">
+                        <div class="input-field">
+                            <input id="sou-name" type="text" placeholder="Jméno" class="validate" required autocomplete="username" value="student">
+                        </div>
+
+                        <div class="input-field">
+                            <input id="sou-password" type="password" placeholder="Heslo" class="validate" required
+                                autocomplete="current-password" value="heslo123">
+                        </div>
+
+                        <div class="row">
+                            <div class="col s12">
+                                <a href="#">Zapomenuté heslo?</a>
+                            </div>
+                        </div>
+
+                        <div id="login-error" class="red-text text-darken-1 hide"
+                            style="margin-bottom: 20px; font-size: 0.9rem;">
+                            Zadané jméno či heslo je nesprávné.
+                        </div>
+
+                        <button class="btn waves-effect waves-light blue accent-2 white-text" type="submit"
+                            style="width: 100%; text-transform: none; border-radius: 4px;">
+                            Přihlásit se
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script type="text/javascript" src="js/materialize.min.js"></script>
+    <script type="text/javascript" src="js/api.js"></script>
+    <script>
+        if (FgApi.readSession()?.accessToken) {
+            window.location.href = "main.html";
+        }
+
+        document.getElementById("login-form").addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const errorEl = document.getElementById("login-error");
+            errorEl.classList.add("hide");
+            errorEl.textContent = "Zadané jméno či heslo je nesprávné.";
+
+            const username = document.getElementById("sou-name").value.trim();
+            const password = document.getElementById("sou-password").value;
+
+            try {
+                await FgApi.login(username, password);
+                window.location.href = "main.html";
+            } catch (error) {
+                errorEl.textContent = error.message || "Zadané jméno či heslo je nesprávné.";
+                errorEl.classList.remove("hide");
+            }
+        });
+    </script>
+</body>
+</html>

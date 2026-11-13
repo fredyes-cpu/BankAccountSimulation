@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link type="text/css" rel="stylesheet" href="css/materialize.min.css" media="screen,projection" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webová aplikace pro podporu výuky finanční gramotnosti studentů SOU</title>
+    <style>
+        .modal.bottom-sheet.custom-high-modal {
+            min-height: 75dvh;
+            max-height: 90dvh;
+            background-color: #1e1e1e;
+            color: #ffffff;
+            border-top-left-radius: 16px;
+            border-top-right-radius: 16px;
+        }
+    </style>
+</head>
+<body class="blue lighten-2" style="margin: 0; padding: 0; overflow: hidden;">
+    <main style="height: 100dvh; max-height: 100dvh; display: flex; flex-direction: column; position: relative; overflow: hidden;">
+        <div style="padding: 24px; background-color: #000000AA; color: #FFFFFF; flex-shrink: 0;">
+            <span style="display: block;">Přihlášen(a) jako <span class="blue-text text-lighten-3" data-user-name>…</span></span>
+            <span style="display: block;">Dnes je <span class="blue-text text-lighten-3" data-today-date>…</span>, čas <span
+                    class="blue-text text-lighten-3" data-today-time>…</span></span>
+            <br>
+            <button data-logout="true" class="btn waves-effect waves-light blue accent-2 white-text" type="button"
+                style="width: 125px; text-transform: none; border-radius: 4px;">
+                Odhlásit se
+            </button>
+            <a href="main.html" class="btn waves-effect waves-light grey darken-2 white-text"
+                style="width: 125px; text-transform: none; border-radius: 4px; margin-left: 8px;">
+                Zpět
+            </a>
+        </div>
+
+        <div style="padding: 24px 24px 110px 24px; background-color: #000000CC; color: #FFFFFF; flex-grow: 1; overflow-y: auto; height: 0; min-height: 0;">
+            <div id="account-summary" class="card-panel grey darken-4"
+                style="margin-bottom: 12px; width: 100%; text-align: left; border: none;">
+                <p class="grey-text">Načítám účet…</p>
+            </div>
+
+            <div id="transfer-panel" class="card-panel grey darken-3"
+                style="margin-bottom: 12px; width: 100%; border: none; display: none;">
+                <h5 class="white-text" style="margin: 0 0 12px 0; font-weight: bold; font-size: 1.2rem;">Převod</h5>
+                <p id="transfer-hint" class="grey-text text-lighten-1" style="margin: 0 0 12px 0; font-size: 0.9rem;"></p>
+                <div class="input-field" style="margin-top: 0;">
+                    <input id="transfer-amount" type="number" min="1" step="1" class="white-text" style="border-bottom-color: #90caf9;">
+                    <label for="transfer-amount" class="active grey-text text-lighten-1">Částka (Kč)</label>
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button id="btn-transfer-out" class="btn waves-effect waves-light blue accent-2 white-text" type="button"
+                        style="text-transform: none; border-radius: 4px; display: none;">
+                        Na běžný účet
+                    </button>
+                    <button id="btn-transfer-in" class="btn waves-effect waves-light blue accent-2 white-text" type="button"
+                        style="text-transform: none; border-radius: 4px; display: none;">
+                        Na spoření
+                    </button>
+                </div>
+            </div>
+
+            <div class="card-panel grey darken-3" style="margin-bottom: 12px; width: 100%; border: none;">
+                <h5 class="white-text" style="margin: 0 0 16px 0; font-weight: bold; font-size: 1.3rem;">Historie</h5>
+                <div id="tx-list"></div>
+            </div>
+        </div>
+
+        <div
+            style="position: absolute; bottom: env(safe-area-inset-bottom, 0px); left: 0; width: 100%; display: flex; justify-content: center; gap: 16px; padding: 24px; background: linear-gradient(to top, #00000066 50%, #00000000); pointer-events: none;">
+            <button id="btn-pay" class="btn waves-effect waves-light blue accent-2 white-text" type="button"
+                style="width: 150px; text-transform: none; border-radius: 4px; pointer-events: auto;">
+                Platba
+            </button>
+            <button id="btn-qr" class="btn waves-effect waves-light blue accent-2 white-text" type="button"
+                style="width: 150px; text-transform: none; border-radius: 4px; pointer-events: auto;">
+                QR kód
+            </button>
+        </div>
+    </main>
+
+    <script type="text/javascript" src="js/materialize.min.js"></script>
+    <script type="text/javascript" src="js/api.js"></script>
+    <script>
+        const session = FgApi.requireSession();
+        if (!session) throw new Error("redirect");
+        FgApi.fillUserHeader();
+        FgApi.bindLogoutButtons();
+
+        const params = new URLSearchParams(window.location.search);
+        const accountId = params.get("accountId");
+        const isSavings = params.get("type") === "savings";
+
+        if (!accountId) {
+            window.location.href = "main.html";
+            throw new Error("missing account");
+        }
+
+        let linkedCurrentId = null;
+        let linkedSavingId = null;
+
+        async function resolveCounterpart() {
+            const [accountsRes, savings] = await Promise.all([
+                FgApi.listAccounts(),
+                FgApi.listSavings(),
+            ]);
+            const accounts = accountsRes.items || [];
+            if (isSavings) {
+                linkedSavingId = accountId;
+                linkedCurrentId = accounts[0]?.accountId || null;
+            } else {
+                linkedCurrentId = accountId;
+                linkedSavingId = savings[0]?.id || null;
+            }
+        }
+
+        function setupTransferPanel() {
+            const panel = document.getElementById("transfer-panel");
+            const hint = document.getElementById("transfer-hint");
+            const btnOut = document.getElementById("btn-transfer-out");
+            const btnIn = document.getElementById("btn-transfer-in");
+
+            if (!linkedCurrentId || !linkedSavingId) {
+                panel.style.display = "none";
+                return;
+            }
+
+            panel.style.display = "block";
+            if (isSavings) {
+                hint.textContent = "Převod ze spoření na běžný účet.";
+                btnOut.style.display = "inline-block";
+                btnIn.style.display = "none";
+            } else {
+                hint.textContent = "Převod z běžného účtu na spoření.";
+                btnOut.style.display = "none";
+                btnIn.style.display = "inline-block";
+            }
+        }
+
+        async function load() {
+            const summaryEl = document.getElementById("account-summary");
+            const listEl = document.getElementById("tx-list");
+            try {
+                await resolveCounterpart();
+                setupTransferPanel();
+
+                if (isSavings) {
+                    const savings = await FgApi.listSavings();
+                    const acc = savings.find((item) => item.id === accountId);
+                    if (!acc) throw new Error("Spořicí účet nenalezen");
+                    summaryEl.innerHTML = `
+                      <h5 class="white-text" style="margin: 0 0 6px 0; font-weight: bold; font-size: 1.3rem;">${acc.name || "Spořicí účet"}</h5>
+                      <p class="grey-text text-lighten-1" style="margin: 0 0 6px 0; font-size: 0.9rem;">${acc.accountNumber}</p>
+                      <p class="grey-text text-lighten-2" style="margin: 0; font-size: 0.8rem;">${FgApi.formatMoney(acc.balance, acc.currency || "CZK")} · úrok ${acc.interestRate}%</p>`;
+                    listEl.innerHTML = `<p class="grey-text text-lighten-1">Historie spoření se načítá z transakcí navázaných na spořicí účet.</p>`;
+                    const history = await FgApi.getAccountHistory(accountId).catch(() => ({ items: [] }));
+                    renderHistory(listEl, history.items || []);
+                    document.getElementById("btn-pay").disabled = true;
+                    document.getElementById("btn-qr").disabled = true;
+                    return;
+                }
+
+                const acc = await FgApi.getAccount(accountId);
+                summaryEl.innerHTML = `
+                  <h5 class="white-text" style="margin: 0 0 6px 0; font-weight: bold; font-size: 1.3rem;">${acc.name || "Bankovní účet"}</h5>
+                  <p class="grey-text text-lighten-1" style="margin: 0 0 6px 0; font-size: 0.9rem;">${acc.accountNumber}</p>
+                  <p class="grey-text text-lighten-2" style="margin: 0; font-size: 0.8rem;">${FgApi.formatMoney(acc.balance, acc.currency)}</p>`;
+
+                const history = await FgApi.getAccountHistory(accountId);
+                renderHistory(listEl, history.items || []);
+            } catch (error) {
+                summaryEl.innerHTML = `<p class="red-text text-lighten-2">${error.message}</p>`;
+            }
+        }
+
+        function renderHistory(listEl, items) {
+            if (!items.length) {
+                listEl.innerHTML = `<p class="grey-text text-lighten-1">Zatím žádné transakce.</p>`;
+                return;
+            }
+            listEl.innerHTML = items.map((tx) => {
+                const sign = tx.direction === "INCOMING" ? "+" : "-";
+                const label = tx.comment || tx.note || tx.counterpartyAccount || tx.transactionId;
+                return `
+                  <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background-color: #212121; border-radius: 6px; margin-bottom: 8px;">
+                    <span>${label}</span>
+                    <span class="grey-text text-lighten-1">${sign}${FgApi.formatMoney(tx.amount, tx.currency)}</span>
+                  </div>`;
+            }).join("");
+        }
+
+        async function runTransfer(direction) {
+            const amount = Number(document.getElementById("transfer-amount").value);
+            if (!amount || amount <= 0) {
+                M.toast({ html: "Zadejte kladnou částku" });
+                return;
+            }
+            if (!linkedCurrentId || !linkedSavingId) {
+                M.toast({ html: "Chybí propojený účet" });
+                return;
+            }
+            try {
+                if (direction === "toCurrent") {
+                    await FgApi.transferSavingsToCurrent(linkedSavingId, linkedCurrentId, amount);
+                } else {
+                    await FgApi.transferCurrentToSavings(linkedSavingId, linkedCurrentId, amount);
+                }
+                M.toast({ html: "Převod hotov" });
+                document.getElementById("transfer-amount").value = "";
+                await load();
+            } catch (error) {
+                M.toast({ html: error.message });
+            }
+        }
+
+        document.getElementById("btn-transfer-out").addEventListener("click", () => runTransfer("toCurrent"));
+        document.getElementById("btn-transfer-in").addEventListener("click", () => runTransfer("toSavings"));
+
+        document.getElementById("btn-pay").addEventListener("click", () => {
+            window.location.href = `pay-1.html?fromAccountId=${encodeURIComponent(accountId)}`;
+        });
+
+        document.getElementById("btn-qr").addEventListener("click", async () => {
+            try {
+                const qr = await FgApi.getQrCode(accountId);
+                const w = window.open("", "_blank");
+                w.document.write(`<img alt="QR" src="${qr.pngBase64}" style="max-width:100%"/>`);
+            } catch (error) {
+                M.toast({ html: error.message });
+            }
+        });
+
+        load();
+    </script>
+</body>
+</html>
